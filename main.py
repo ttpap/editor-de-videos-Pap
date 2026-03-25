@@ -3,6 +3,8 @@ import re
 import json
 import uuid
 import shutil
+import hashlib
+import random
 import subprocess
 import traceback
 import urllib.request
@@ -82,67 +84,110 @@ async def upload_file(file: UploadFile = File(...), session_id: str = Form(...))
     }
 
 
+# Cache por mood: { mood: [tracks] }
+_music_cache: dict = {}
+
+MOOD_SEARCH = {
+    "energetico": "electronic dance funk",
+    "calmo":      "ambient chillout drone",
+    "cinematico": "cinematic orchestral epic",
+    "alegre":     "happy jazz pop",
+    "romantico":  "acoustic guitar piano romantic",
+    "all":        "instrumental",
+}
+
+
+def _ia_search_items(query: str, rows: int = 8) -> list:
+    """Busca itens no Internet Archive (netlabels CC)."""
+    params = urllib.parse.urlencode({
+        "q": f"collection:netlabels AND ({query})",
+        "fl[]": ["identifier", "title", "creator", "licenseurl"],
+        "rows": rows,
+        "output": "json",
+        "sort[]": "downloads desc",
+    }, doseq=True)
+    url = f"https://archive.org/advancedsearch.php?{params}"
+    req = urllib.request.Request(url, headers={"User-Agent": "VideoEditor/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read()).get("response", {}).get("docs", [])
+
+
+def _ia_get_mp3s(identifier: str, limit: int = 4) -> list:
+    """Retorna URLs dos primeiros MP3s de um item do IA."""
+    url = f"https://archive.org/metadata/{identifier}/files"
+    req = urllib.request.Request(url, headers={"User-Agent": "VideoEditor/1.0"})
+    with urllib.request.urlopen(req, timeout=8) as r:
+        files = json.loads(r.read()).get("result", [])
+    tracks = []
+    for f in files:
+        name = f.get("name", "")
+        if not name.lower().endswith(".mp3"):
+            continue
+        if f.get("private") == "true":
+            continue
+        size = int(f.get("size", 0) or 0)
+        if size > 20_000_000 or size < 100_000:   # skip >20MB or tiny
+            continue
+        try:
+            dur = int(float(f.get("length", 0) or 0))
+        except Exception:
+            dur = 0
+        if dur > 0 and dur < 30:                  # skip very short clips
+            continue
+        title = name.rsplit(".", 1)[0].replace("_", " ").strip()
+        tracks.append({
+            "id": f"{identifier}/{name}",
+            "title": title,
+            "artist": "",
+            "url": f"https://archive.org/download/{identifier}/{urllib.parse.quote(name)}",
+            "license": "CC",
+            "duration": dur,
+            "page": f"https://archive.org/details/{identifier}",
+        })
+        if len(tracks) >= limit:
+            break
+    return tracks
+
+
 @app.get("/api/music")
 async def search_music(mood: str = "all", q: str = ""):
-    """Busca músicas royalty-free no ccMixter (CC-licensed, uso livre)."""
-    try:
-        mood_tags = {
-            "energetico": "upbeat,energetic,dance",
-            "calmo":      "calm,ambient,relaxing",
-            "cinematico": "cinematic,epic,film",
-            "alegre":     "happy,positive,fun",
-            "romantico":  "romantic,love,soft",
-            "all":        "instrumental",
-        }
-        tags = mood_tags.get(mood, "instrumental")
-        if q:
-            tags = q
+    """Músicas CC do Internet Archive (netlabels)."""
+    global _music_cache
+    cache_key = q.lower() if q else mood
+    if cache_key in _music_cache:
+        return {"tracks": _music_cache[cache_key], "source": "Internet Archive · Netlabels (CC)"}
 
-        params = urllib.parse.urlencode({
-            "format": "json",
-            "limit": 24,
-            "tags": tags,
-            "type": "0",   # instrumental uploads only
-            "lic": "1",    # verified license
-        })
-        url = f"http://ccmixter.org/api/query?{params}"
-        req = urllib.request.Request(url, headers={"User-Agent": "VideoEditor/1.0"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read())
+    try:
+        query = q if q else MOOD_SEARCH.get(mood, "instrumental")
+        items = _ia_search_items(query, rows=10)
 
         tracks = []
-        for item in data:
-            dl = item.get("files", [{}])[0].get("file_download_url", "")
-            if not dl or not dl.endswith(".mp3"):
-                # try any mp3 in files list
-                for f in item.get("files", []):
-                    if f.get("file_download_url", "").endswith(".mp3"):
-                        dl = f["file_download_url"]
-                        break
-            if not dl:
+        for item in items:
+            ident = item.get("identifier", "")
+            artist = item.get("creator", "")
+            album = item.get("title", ident)
+            if not ident:
                 continue
-            tracks.append({
-                "id": str(item.get("upload_id", "")),
-                "title": item.get("upload_name", "Sem título"),
-                "artist": item.get("user_name", "Desconhecido"),
-                "url": dl,
-                "license": item.get("license_name", "CC"),
-                "duration": item.get("upload_duration", 0),
-                "page": item.get("upload_page_url", ""),
-            })
+            try:
+                item_tracks = _ia_get_mp3s(ident, limit=3)
+                for t in item_tracks:
+                    t["artist"] = artist or album
+                tracks.extend(item_tracks)
+            except Exception:
+                continue
+            if len(tracks) >= 24:
+                break
 
-        return {"tracks": tracks, "source": "ccMixter (CC Licensed)"}
+        # Deterministic shuffle so same mood always feels different from "all"
+        seed = int(hashlib.md5(cache_key.encode()).hexdigest()[:8], 16)
+        rng = random.Random(seed)
+        rng.shuffle(tracks)
+
+        _music_cache[cache_key] = tracks[:24]
+        return {"tracks": _music_cache[cache_key], "source": "Internet Archive · Netlabels (CC)"}
 
     except Exception as e:
-        # Fallback: curated CC0 tracks from Pixabay CDN (known working URLs)
-        fallback = [
-            {"id":"pb1","title":"Inspiring Cinematic","artist":"Lesfm","url":"https://cdn.pixabay.com/audio/2022/10/16/audio_12a0e684f2.mp3","license":"CC0","duration":185,"page":"https://pixabay.com/music/"},
-            {"id":"pb2","title":"Lofi Study","artist":"FASSounds","url":"https://cdn.pixabay.com/audio/2022/01/18/audio_d0c6ff1fbe.mp3","license":"CC0","duration":132,"page":"https://pixabay.com/music/"},
-            {"id":"pb3","title":"Upbeat Corporate","artist":"Audiorezout","url":"https://cdn.pixabay.com/audio/2022/08/04/audio_2dde668d05.mp3","license":"CC0","duration":152,"page":"https://pixabay.com/music/"},
-            {"id":"pb4","title":"Happy Acoustic","artist":"Lesfm","url":"https://cdn.pixabay.com/audio/2021/11/13/audio_a94e4e0bce.mp3","license":"CC0","duration":120,"page":"https://pixabay.com/music/"},
-            {"id":"pb5","title":"Ambient Chill","artist":"Music_Unlimited","url":"https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a73467.mp3","license":"CC0","duration":210,"page":"https://pixabay.com/music/"},
-        ]
-        return {"tracks": fallback, "source": "Pixabay (CC0)", "fallback": True}
+        return {"tracks": [], "source": "Erro ao carregar músicas", "error": str(e)}
 
 
 @app.post("/api/process")
@@ -184,6 +229,25 @@ async def cancel_job(job_id: str):
         jobs[job_id]["cancel_requested"] = True
         jobs[job_id]["message"] = "Cancelando..."
     return {"ok": True}
+
+
+@app.get("/api/music/proxy")
+async def music_proxy(url: str):
+    """Proxy de áudio para evitar bloqueio CORS no browser."""
+    allowed_hosts = ("archive.org", "ccmixter.org", "cdn.pixabay.com")
+    from urllib.parse import urlparse
+    host = urlparse(url).netloc
+    if not any(host.endswith(h) for h in allowed_hosts):
+        raise HTTPException(status_code=400, detail="Host não permitido")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "VideoEditor/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read()
+        from fastapi.responses import Response
+        return Response(content=data, media_type="audio/mpeg",
+                        headers={"Cache-Control": "public, max-age=3600"})
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @app.get("/api/download/{job_id}")

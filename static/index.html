@@ -220,6 +220,11 @@
     .progress-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--accent),#60a5fa); transition:width 0.4s ease; width:0%; }
     .progress-msg { font-size:0.85rem; color:var(--muted); text-align:center; }
     .progress-pct { font-size:1.4rem; font-weight:700; text-align:center; color:var(--accent2); margin-top:4px; }
+    .progress-eta {
+      text-align:center; margin-top:6px;
+      font-size:0.85rem; color:var(--muted);
+    }
+    .progress-eta strong { color:var(--text); }
 
     /* ── Result ── */
     #resultSection { display:none; }
@@ -361,6 +366,7 @@
     <div class="progress-pct" id="progressPct">0%</div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="progress-msg" id="progressMsg">Aguardando...</div>
+    <div class="progress-eta" id="progressEta"></div>
     <div style="text-align:center;margin-top:16px">
       <button id="btnCancel" onclick="cancelJob()"
         style="background:none;border:1px solid var(--danger);color:var(--danger);padding:8px 24px;border-radius:8px;cursor:pointer;font-size:0.88rem;transition:background 0.15s"
@@ -403,11 +409,13 @@ let sessionId = null;
 let files = [];
 let selectedDuration = 10;
 let selectedResolution = "1080p";
-let selectedMusic = null;   // { url, title, artist }
+let selectedMusic = null;
 let pollTimer = null;
 let currentJobId = null;
 let dragSrc = null;
 let currentAudio = null;
+let jobStartTime = null;
+let lastProgress = 0;
 
 // ─── Session ─────────────────────────────────────────────────────────────────
 async function init() {
@@ -666,7 +674,7 @@ function buildTrackCard(t) {
 
   card.querySelector(".btn-preview").addEventListener("click", e => {
     e.stopPropagation();
-    togglePreview(t.url, e.target);
+    togglePreview(e.target.dataset.url, e.target);
   });
 
   card.addEventListener("click", () => selectMusic(t, card));
@@ -721,6 +729,9 @@ async function startProcessing() {
 
   hide("resultSection"); hide("errorSection"); show("progressSection");
   document.getElementById("btnProcess").disabled = true;
+  jobStartTime = Date.now();
+  lastProgress = 0;
+  document.getElementById("progressEta").textContent = "";
 
   const fd = new FormData();
   fd.append("session_id", sessionId);
@@ -750,6 +761,7 @@ function pollStatus(jobId) {
       document.getElementById("progressFill").style.width = d.progress + "%";
       document.getElementById("progressPct").textContent = d.progress + "%";
       document.getElementById("progressMsg").textContent = d.message || "";
+      updateEta(d.progress);
       if (d.status === "done") showResult(d, jobId);
       else if (d.status === "error") showError(d.message || "Erro desconhecido");
       else if (d.status === "cancelled") showCancelled();
@@ -779,6 +791,7 @@ function showCancelled() {
 }
 
 function showResult(d, jobId) {
+  jobStartTime = null;
   hide("progressSection"); show("resultSection");
   const m = Math.floor(d.duration_sec / 60), s = d.duration_sec % 60;
   const musicNote = selectedMusic ? ` · 🎵 com música` : "";
@@ -814,6 +827,27 @@ function resetAll() {
   document.getElementById("selectedMusicInfo").style.display = "none";
   document.querySelectorAll(".track-card").forEach(c => c.classList.remove("selected"));
   init();
+}
+
+// ─── ETA ─────────────────────────────────────────────────────────────────────
+function updateEta(progress) {
+  const el = document.getElementById("progressEta");
+  if (!jobStartTime || progress <= 2) { el.textContent = ""; return; }
+
+  const elapsed = (Date.now() - jobStartTime) / 1000; // seconds
+  if (progress >= 99) { el.textContent = ""; return; }
+
+  const totalEst = elapsed / (progress / 100);
+  const remaining = Math.max(0, totalEst - elapsed);
+
+  el.innerHTML = `Tempo decorrido: <strong>${fmtTime(elapsed)}</strong> · Estimativa restante: <strong>${fmtTime(remaining)}</strong>`;
+}
+
+function fmtTime(secs) {
+  secs = Math.round(secs);
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return s > 0 ? `${m}min ${s}s` : `${m}min`;
 }
 
 // ─── Utils ───────────────────────────────────────────────────────────────────
