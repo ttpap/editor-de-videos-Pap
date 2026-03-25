@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Editor de Vídeos</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --surface2: #22222e;
+      --border: #2e2e40;
+      --accent: #7c5cfc;
+      --accent2: #a78bfa;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --text: #e2e2f0;
+      --muted: #8888aa;
+      --radius: 12px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px 16px 60px;
+    }
+
+    header { text-align: center; margin-bottom: 40px; }
+    header h1 {
+      font-size: 2.2rem; font-weight: 800;
+      background: linear-gradient(135deg, #7c5cfc, #a78bfa, #60a5fa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; letter-spacing: -0.5px;
+    }
+    header p { color: var(--muted); margin-top: 8px; font-size: 0.95rem; }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px; margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 0.8rem; font-weight: 700; letter-spacing: 1px;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 16px;
+    }
+
+    /* ── Upload buttons ── */
+    .upload-btns {
+      display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;
+    }
+    .upload-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 18px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--text); cursor: pointer;
+      font-size: 0.88rem; font-weight: 500; transition: border-color 0.15s, background 0.15s;
+    }
+    .upload-btn:hover { border-color: var(--accent); background: rgba(124,92,252,0.07); }
+    .upload-btn input { display: none; }
+
+    /* ── Drop zone ── */
+    #dropZone {
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      padding: 40px 24px; text-align: center; cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    #dropZone:hover, #dropZone.drag-over {
+      border-color: var(--accent); background: rgba(124,92,252,0.05);
+    }
+    .drop-icon { font-size: 2.5rem; margin-bottom: 10px; }
+    #dropZone h2 { font-size: 1rem; font-weight: 600; }
+    #dropZone p { color: var(--muted); font-size: 0.82rem; margin-top: 5px; }
+
+    /* ── File list ── */
+    #fileList { list-style: none; }
+    #fileList li {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 11px; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: 7px; cursor: grab; user-select: none;
+      transition: box-shadow 0.15s, opacity 0.15s;
+    }
+    #fileList li:active { cursor: grabbing; }
+    #fileList li.dragging { opacity: 0.4; }
+    #fileList li.drag-target { box-shadow: 0 0 0 2px var(--accent); }
+
+    .file-thumb {
+      width: 52px; height: 38px; border-radius: 6px; background: var(--border);
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; overflow: hidden;
+    }
+    .file-thumb img, .file-thumb video { width:100%; height:100%; object-fit:cover; border-radius:6px; }
+    .file-info { flex:1; min-width:0; }
+    .file-name { font-size:0.88rem; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .file-meta { font-size:0.73rem; color:var(--muted); margin-top:2px; }
+    .badge {
+      font-size:0.63rem; font-weight:700; padding:2px 7px; border-radius:4px;
+      letter-spacing:0.5px; text-transform:uppercase; flex-shrink:0;
+    }
+    .badge-video { background:rgba(96,165,250,0.15); color:#60a5fa; }
+    .badge-image { background:rgba(34,197,94,0.15); color:#22c55e; }
+    .btn-remove {
+      background:none; border:none; cursor:pointer; color:var(--muted);
+      font-size:1rem; padding:4px; border-radius:4px; flex-shrink:0;
+      transition:color 0.15s;
+    }
+    .btn-remove:hover { color:var(--danger); }
+    .drag-handle { color:var(--border); font-size:1rem; flex-shrink:0; cursor:grab; }
+    .uploading-badge { font-size:0.72rem; color:var(--warn); flex-shrink:0; }
+
+    /* ── Size bar ── */
+    #sizeBar { height:6px; background:var(--surface2); border-radius:3px; overflow:hidden; margin-top:12px; }
+    #sizeBarFill { height:100%; border-radius:3px; background:linear-gradient(90deg,var(--accent),#60a5fa); transition:width 0.3s; }
+    #sizeLabel { font-size:0.78rem; color:var(--muted); margin-top:6px; text-align:right; }
+
+    /* ── Options grid ── */
+    .options-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:540px) { .options-grid { grid-template-columns:1fr; } }
+    .option-group label { display:block; font-size:0.8rem; color:var(--muted); margin-bottom:8px; font-weight:600; }
+    .pill-group { display:flex; gap:8px; flex-wrap:wrap; }
+    .pill {
+      padding:7px 16px; border-radius:50px; border:1px solid var(--border);
+      background:var(--surface2); color:var(--text); cursor:pointer;
+      font-size:0.85rem; transition:border-color 0.15s, background 0.15s, color 0.15s;
+    }
+    .pill:hover { border-color:var(--accent2); }
+    .pill.active { border-color:var(--accent); background:rgba(124,92,252,0.15); color:var(--accent2); font-weight:600; }
+    select {
+      width:100%; padding:9px 12px; background:var(--surface2);
+      border:1px solid var(--border); border-radius:8px; color:var(--text);
+      font-size:0.88rem; outline:none; cursor:pointer;
+    }
+    select:focus { border-color:var(--accent); }
+
+    /* ── Volume slider ── */
+    .slider-row { display:flex; align-items:center; gap:12px; }
+    input[type=range] {
+      flex:1; -webkit-appearance:none; height:4px;
+      background:var(--border); border-radius:2px; outline:none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance:none; width:16px; height:16px; border-radius:50%;
+      background:var(--accent); cursor:pointer;
+    }
+    .slider-val { font-size:0.82rem; color:var(--accent2); min-width:32px; text-align:right; }
+
+    /* ── Music section ── */
+    .mood-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .mood-btn {
+      padding:6px 14px; border-radius:20px; border:1px solid var(--border);
+      background:var(--surface2); color:var(--muted); cursor:pointer;
+      font-size:0.82rem; transition:all 0.15s;
+    }
+    .mood-btn:hover { border-color:var(--accent2); color:var(--text); }
+    .mood-btn.active { border-color:var(--accent); background:rgba(124,92,252,0.15); color:var(--accent2); font-weight:600; }
+
+    #musicGrid {
+      display:grid; grid-template-columns:repeat(auto-fill, minmax(230px,1fr)); gap:10px;
+      max-height:360px; overflow-y:auto; padding-right:4px;
+    }
+    #musicGrid::-webkit-scrollbar { width:5px; }
+    #musicGrid::-webkit-scrollbar-track { background:transparent; }
+    #musicGrid::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+    .track-card {
+      background:var(--surface2); border:1px solid var(--border);
+      border-radius:10px; padding:12px; cursor:pointer;
+      transition:border-color 0.15s, background 0.15s;
+      position:relative;
+    }
+    .track-card:hover { border-color:var(--accent2); }
+    .track-card.selected { border-color:var(--accent); background:rgba(124,92,252,0.1); }
+    .track-card.selected::after {
+      content:"✓"; position:absolute; top:10px; right:10px;
+      color:var(--accent); font-weight:700; font-size:0.9rem;
+    }
+    .track-title { font-size:0.88rem; font-weight:600; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .track-artist { font-size:0.75rem; color:var(--muted); margin-bottom:8px; }
+    .track-actions { display:flex; gap:6px; align-items:center; }
+    .btn-preview {
+      flex:1; padding:5px 10px; border-radius:6px; border:1px solid var(--border);
+      background:transparent; color:var(--text); font-size:0.78rem; cursor:pointer;
+      transition:border-color 0.15s;
+    }
+    .btn-preview:hover { border-color:var(--accent2); }
+    .btn-preview.playing { border-color:var(--accent); color:var(--accent2); }
+    .track-license { font-size:0.68rem; color:var(--muted); padding:2px 6px; border:1px solid var(--border); border-radius:4px; }
+
+    #musicLoading, #musicEmpty { text-align:center; color:var(--muted); padding:32px; font-size:0.88rem; grid-column:1/-1; }
+    .music-source { font-size:0.73rem; color:var(--muted); margin-top:10px; text-align:right; }
+    .selected-music-info {
+      margin-top:12px; padding:10px 14px; background:rgba(124,92,252,0.08);
+      border:1px solid rgba(124,92,252,0.3); border-radius:8px;
+      font-size:0.84rem; display:flex; align-items:center; justify-content:space-between;
+    }
+    .btn-clear-music { background:none; border:none; color:var(--muted); cursor:pointer; font-size:1rem; }
+    .btn-clear-music:hover { color:var(--danger); }
+
+    /* ── Process button ── */
+    #btnProcess {
+      width:100%; padding:16px; font-size:1rem; font-weight:700;
+      color:#fff; background:linear-gradient(135deg,var(--accent),#a78bfa);
+      border:none; border-radius:var(--radius); cursor:pointer;
+      transition:opacity 0.2s, transform 0.1s; letter-spacing:0.3px;
+    }
+    #btnProcess:hover:not(:disabled) { opacity:0.9; transform:translateY(-1px); }
+    #btnProcess:active:not(:disabled) { transform:translateY(0); }
+    #btnProcess:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+
+    /* ── Progress ── */
+    #progressSection { display:none; }
+    .progress-bar { height:8px; background:var(--surface2); border-radius:4px; overflow:hidden; margin:12px 0; }
+    .progress-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--accent),#60a5fa); transition:width 0.4s ease; width:0%; }
+    .progress-msg { font-size:0.85rem; color:var(--muted); text-align:center; }
+    .progress-pct { font-size:1.4rem; font-weight:700; text-align:center; color:var(--accent2); margin-top:4px; }
+
+    /* ── Result ── */
+    #resultSection { display:none; }
+    .result-box { background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.3); border-radius:var(--radius); padding:24px; text-align:center; }
+    .result-box h3 { font-size:1.1rem; color:var(--success); margin-bottom:8px; }
+    .result-meta { font-size:0.85rem; color:var(--muted); margin-bottom:20px; }
+    .btn-download { display:inline-block; padding:12px 32px; background:var(--success); color:#fff; text-decoration:none; border-radius:8px; font-weight:700; font-size:0.95rem; transition:opacity 0.15s; }
+    .btn-download:hover { opacity:0.85; }
+    .btn-new { display:block; margin-top:14px; background:none; border:none; color:var(--muted); cursor:pointer; font-size:0.85rem; text-decoration:underline; }
+    .btn-new:hover { color:var(--text); }
+    video.preview { max-width:100%; border-radius:8px; margin-top:16px; }
+
+    /* ── Error ── */
+    #errorSection { display:none; }
+    .error-box { background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.3); border-radius:var(--radius); padding:20px; }
+    .error-box h3 { color:var(--danger); margin-bottom:8px; }
+    .error-box p { font-size:0.85rem; color:var(--muted); }
+    .btn-retry { margin-top:14px; background:none; border:1px solid var(--border); color:var(--text); padding:8px 20px; border-radius:8px; cursor:pointer; font-size:0.85rem; }
+    .btn-retry:hover { border-color:var(--accent); color:var(--accent2); }
+
+    .empty-state { text-align:center; padding:24px; color:var(--muted); font-size:0.9rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>🎬 Editor de Vídeos</h1>
+    <p>Combine vídeos e imagens em um vídeo contínuo com transições e música</p>
+  </header>
+
+  <!-- ── Upload ────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">📁 Arquivos de Mídia</div>
+
+    <div class="upload-btns">
+      <label class="upload-btn">
+        🖼️ Selecionar arquivos
+        <input type="file" id="fileInput" multiple
+          accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm,video/x-flv,video/3gpp,image/jpeg,image/png,image/gif,image/webp,image/bmp,image/tiff,.mov,.avi,.mkv,.wmv,.m4v,.ts,.mts,.heic" />
+      </label>
+      <label class="upload-btn">
+        📂 Selecionar pasta
+        <input type="file" id="folderInput" multiple webkitdirectory />
+      </label>
+    </div>
+
+    <div id="dropZone">
+      <div class="drop-icon">🎞️</div>
+      <h2>Arraste arquivos ou pastas inteiras aqui</h2>
+      <p>Vídeos (MP4, MOV, AVI, MKV…) e Imagens (JPG, PNG, WEBP, HEIC…) · Até 5 GB total</p>
+    </div>
+
+    <div id="sizeBar" style="display:none"><div id="sizeBarFill" style="width:0%"></div></div>
+    <div id="sizeLabel"></div>
+    <ul id="fileList" style="margin-top:16px"></ul>
+  </div>
+
+  <!-- ── Options ───────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">⚙️ Configurações</div>
+    <div class="options-grid">
+
+      <div class="option-group">
+        <label>Duração do vídeo</label>
+        <div class="pill-group" id="durationGroup">
+          <button class="pill" data-val="5">5 min</button>
+          <button class="pill active" data-val="10">10 min</button>
+          <button class="pill" data-val="15">15 min</button>
+        </div>
+      </div>
+
+      <div class="option-group">
+        <label>Resolução</label>
+        <div class="pill-group" id="resolutionGroup">
+          <button class="pill" data-val="720p">720p</button>
+          <button class="pill active" data-val="1080p">1080p</button>
+        </div>
+      </div>
+
+      <div class="option-group">
+        <label>Estilo de transição</label>
+        <select id="transitionSelect">
+          <option value="fade">Fade (suave)</option>
+          <option value="dissolve">Dissolve</option>
+          <option value="wipeleft">Wipe para esquerda</option>
+          <option value="wiperight">Wipe para direita</option>
+          <option value="slideleft">Slide para esquerda</option>
+          <option value="slideright">Slide para direita</option>
+          <option value="smoothleft">Smooth esquerda</option>
+          <option value="random">Aleatório (variado)</option>
+        </select>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Music ─────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">🎵 Música de Fundo — Royalty Free</div>
+
+    <div class="mood-bar">
+      <button class="mood-btn active" data-mood="all">Tudo</button>
+      <button class="mood-btn" data-mood="energetico">⚡ Energético</button>
+      <button class="mood-btn" data-mood="calmo">🌊 Calmo</button>
+      <button class="mood-btn" data-mood="cinematico">🎬 Cinematográfico</button>
+      <button class="mood-btn" data-mood="alegre">😊 Alegre</button>
+      <button class="mood-btn" data-mood="romantico">💜 Romântico</button>
+    </div>
+
+    <div id="musicGrid">
+      <div id="musicLoading">🎵 Carregando músicas...</div>
+    </div>
+    <div class="music-source" id="musicSource"></div>
+
+    <div class="selected-music-info" id="selectedMusicInfo" style="display:none">
+      <span id="selectedMusicLabel">Nenhuma música selecionada</span>
+      <button class="btn-clear-music" onclick="clearMusic()" title="Remover música">✕</button>
+    </div>
+
+    <div class="option-group" style="margin-top:16px" id="volumeGroup" style="display:none">
+      <label>Volume da música de fundo</label>
+      <div class="slider-row">
+        <input type="range" id="musicVolume" min="0" max="1" step="0.05" value="0.3"
+          oninput="document.getElementById('volVal').textContent = Math.round(this.value*100)+'%'" />
+        <span class="slider-val" id="volVal">30%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Process button ────────────────────────────────────────── -->
+  <div class="card" style="text-align:center">
+    <button id="btnProcess" disabled>Selecione arquivos para continuar</button>
+  </div>
+
+  <!-- ── Progress ──────────────────────────────────────────────── -->
+  <div class="card" id="progressSection">
+    <div class="card-title">⏳ Processando</div>
+    <div class="progress-pct" id="progressPct">0%</div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-msg" id="progressMsg">Aguardando...</div>
+    <div style="text-align:center;margin-top:16px">
+      <button id="btnCancel" onclick="cancelJob()"
+        style="background:none;border:1px solid var(--danger);color:var(--danger);padding:8px 24px;border-radius:8px;cursor:pointer;font-size:0.88rem;transition:background 0.15s"
+        onmouseover="this.style.background='rgba(239,68,68,0.1)'"
+        onmouseout="this.style.background='none'">
+        ✕ Cancelar processamento
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Result ────────────────────────────────────────────────── -->
+  <div class="card" id="resultSection">
+    <div class="result-box">
+      <h3>✅ Vídeo pronto!</h3>
+      <div class="result-meta" id="resultMeta"></div>
+      <a id="downloadLink" class="btn-download" href="#">⬇ Baixar Vídeo</a>
+      <video id="resultPreview" class="preview" controls style="display:none"></video>
+      <button class="btn-new" onclick="resetAll()">Criar novo vídeo</button>
+    </div>
+  </div>
+
+  <!-- ── Error ─────────────────────────────────────────────────── -->
+  <div class="card" id="errorSection">
+    <div class="error-box">
+      <h3>❌ Erro no processamento</h3>
+      <p id="errorMsg"></p>
+      <button class="btn-retry" onclick="resetAll()">Tentar novamente</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+const MAX_SIZE = 5 * 1024 * 1024 * 1024;
+const VIDEO_EXT = new Set(["mp4","mov","avi","mkv","webm","m4v","flv","wmv","3gp","ts","mts","m2ts"]);
+const IMAGE_EXT = new Set(["jpg","jpeg","png","gif","bmp","webp","tiff","tif","heic","heif"]);
+
+let sessionId = null;
+let files = [];
+let selectedDuration = 10;
+let selectedResolution = "1080p";
+let selectedMusic = null;   // { url, title, artist }
+let pollTimer = null;
+let currentJobId = null;
+let dragSrc = null;
+let currentAudio = null;
+
+// ─── Session ─────────────────────────────────────────────────────────────────
+async function init() {
+  const r = await fetch("/api/session", { method: "POST" });
+  const d = await r.json();
+  sessionId = d.session_id;
+}
+init();
+
+// ─── Pill selectors ──────────────────────────────────────────────────────────
+document.querySelectorAll("#durationGroup .pill").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#durationGroup .pill").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedDuration = parseInt(btn.dataset.val);
+    updateUI();
+  });
+});
+document.querySelectorAll("#resolutionGroup .pill").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#resolutionGroup .pill").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedResolution = btn.dataset.val;
+  });
+});
+
+// ─── Drop zone ───────────────────────────────────────────────────────────────
+const dropZone = document.getElementById("dropZone");
+
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+dropZone.addEventListener("drop", async e => {
+  e.preventDefault();
+  dropZone.classList.remove("drag-over");
+  const items = [...e.dataTransfer.items];
+  for (const item of items) {
+    const entry = item.webkitGetAsEntry?.();
+    if (entry) {
+      if (entry.isDirectory) {
+        await traverseDirectory(entry);
+      } else {
+        const f = item.getAsFile();
+        if (f) await uploadFile(f);
+      }
+    } else {
+      const f = item.getAsFile();
+      if (f) await uploadFile(f);
+    }
+  }
+  updateUI();
+});
+
+async function traverseDirectory(entry, depth = 0) {
+  if (depth > 5) return; // safety limit
+  return new Promise(resolve => {
+    const reader = entry.createReader();
+    const readAll = () => {
+      reader.readEntries(async entries => {
+        if (!entries.length) { resolve(); return; }
+        for (const e of entries) {
+          if (e.isDirectory) await traverseDirectory(e, depth + 1);
+          else await new Promise(r2 => e.file(async f => { await uploadFile(f); r2(); }));
+        }
+        readAll(); // readEntries may paginate
+      });
+    };
+    readAll();
+  });
+}
+
+document.getElementById("fileInput").addEventListener("change", async e => {
+  for (const f of e.target.files) await uploadFile(f);
+  updateUI();
+  e.target.value = "";
+});
+
+document.getElementById("folderInput").addEventListener("change", async e => {
+  for (const f of e.target.files) await uploadFile(f);
+  updateUI();
+  e.target.value = "";
+});
+
+async function uploadFile(f) {
+  const ext = f.name.split(".").pop().toLowerCase();
+  const type = VIDEO_EXT.has(ext) ? "video" : IMAGE_EXT.has(ext) ? "image" : null;
+  if (!type) return;
+
+  const totalSize = files.reduce((s, x) => s + x.size, 0) + f.size;
+  if (totalSize > MAX_SIZE) {
+    alert(`Limite de 5 GB atingido! "${f.name}" não foi adicionado.`);
+    return;
+  }
+
+  const tempId = `tmp_${Date.now()}_${Math.random()}`;
+  files.push({ name: f.name, size: f.size, type, thumb: null, uploading: true, tempId });
+  renderList();
+
+  const thumbUrl = await generateThumb(f, type).catch(() => null);
+
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("session_id", sessionId);
+
+  try {
+    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const d = await r.json();
+    const idx = files.findIndex(x => x.tempId === tempId);
+    if (idx !== -1) files[idx] = { name: d.name, size: d.size, type: d.type, thumb: thumbUrl };
+  } catch {
+    files = files.filter(x => x.tempId !== tempId);
+  }
+  renderList();
+  updateUI();
+}
+
+function generateThumb(f, type) {
+  return new Promise((resolve, reject) => {
+    if (type === "image") {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(f);
+    } else {
+      const video = document.createElement("video");
+      video.muted = true; video.preload = "metadata";
+      const url = URL.createObjectURL(f);
+      video.src = url;
+      video.onloadeddata = () => { video.currentTime = Math.min(1, video.duration * 0.1); };
+      video.onseeked = () => {
+        const c = document.createElement("canvas");
+        c.width = 96; c.height = 54;
+        c.getContext("2d").drawImage(video, 0, 0, 96, 54);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL("image/jpeg", 0.7));
+      };
+      video.onerror = reject;
+    }
+  });
+}
+
+// ─── File list ───────────────────────────────────────────────────────────────
+function renderList() {
+  const ul = document.getElementById("fileList");
+  if (!files.length) {
+    ul.innerHTML = `<li class="empty-state" style="background:none;border:none;cursor:default">Nenhum arquivo adicionado ainda</li>`;
+    return;
+  }
+  ul.innerHTML = "";
+  files.forEach((f, i) => {
+    const li = document.createElement("li");
+    li.dataset.index = i;
+    li.draggable = true;
+
+    const thumbHTML = f.thumb
+      ? `<div class="file-thumb"><img src="${f.thumb}" /></div>`
+      : `<div class="file-thumb">${f.type === "video" ? "🎬" : "🖼️"}</div>`;
+
+    const badge = f.type === "video"
+      ? `<span class="badge badge-video">Vídeo</span>`
+      : `<span class="badge badge-image">Imagem</span>`;
+
+    li.innerHTML = `
+      <span class="drag-handle">⠿</span>
+      ${thumbHTML}
+      <div class="file-info">
+        <div class="file-name">${esc(f.name)}</div>
+        <div class="file-meta">${fmt(f.size)}</div>
+      </div>
+      ${badge}
+      ${f.uploading ? `<span class="uploading-badge">⏳</span>` : ""}
+      <button class="btn-remove" data-index="${i}">✕</button>
+    `;
+
+    li.addEventListener("dragstart", e => { dragSrc = i; li.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
+    li.addEventListener("dragend", () => li.classList.remove("dragging"));
+    li.addEventListener("dragover", e => { e.preventDefault(); document.querySelectorAll("#fileList li").forEach(el => el.classList.remove("drag-target")); li.classList.add("drag-target"); });
+    li.addEventListener("drop", e => {
+      e.preventDefault(); li.classList.remove("drag-target");
+      if (dragSrc !== null && dragSrc !== i) {
+        const moved = files.splice(dragSrc, 1)[0];
+        files.splice(i, 0, moved);
+        dragSrc = null; renderList(); updateUI();
+      }
+    });
+    ul.appendChild(li);
+  });
+
+  ul.querySelectorAll(".btn-remove").forEach(btn => {
+    btn.addEventListener("click", () => { files.splice(+btn.dataset.index, 1); renderList(); updateUI(); });
+  });
+}
+
+function updateUI() {
+  const total = files.reduce((s, f) => s + f.size, 0);
+  const pct = Math.min(100, (total / MAX_SIZE) * 100);
+  const bar = document.getElementById("sizeBar");
+  if (files.length) {
+    bar.style.display = "block";
+    document.getElementById("sizeBarFill").style.width = pct + "%";
+    document.getElementById("sizeLabel").textContent = `${fmt(total)} de 5 GB · ${files.length} arquivo${files.length > 1 ? "s" : ""}`;
+  } else {
+    bar.style.display = "none";
+    document.getElementById("sizeLabel").textContent = "";
+  }
+  const ready = files.filter(f => !f.uploading).length > 0;
+  const btn = document.getElementById("btnProcess");
+  btn.disabled = !ready;
+  btn.textContent = ready ? `🎬 Criar vídeo de ${selectedDuration} minutos` : "Selecione arquivos para continuar";
+}
+
+// ─── Music ───────────────────────────────────────────────────────────────────
+let currentMood = "all";
+
+document.querySelectorAll(".mood-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".mood-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentMood = btn.dataset.mood;
+    loadMusic(currentMood);
+  });
+});
+
+async function loadMusic(mood = "all") {
+  const grid = document.getElementById("musicGrid");
+  grid.innerHTML = `<div id="musicLoading">🎵 Buscando músicas livres de direitos...</div>`;
+  try {
+    const r = await fetch(`/api/music?mood=${mood}`);
+    const d = await r.json();
+    document.getElementById("musicSource").textContent = `Fonte: ${d.source}`;
+    if (!d.tracks.length) {
+      grid.innerHTML = `<div id="musicEmpty">Nenhuma música encontrada. Tente outra categoria.</div>`;
+      return;
+    }
+    grid.innerHTML = "";
+    d.tracks.forEach(t => grid.appendChild(buildTrackCard(t)));
+  } catch(e) {
+    grid.innerHTML = `<div id="musicEmpty">Erro ao carregar músicas. Verifique sua conexão.</div>`;
+  }
+}
+
+function buildTrackCard(t) {
+  const card = document.createElement("div");
+  card.className = "track-card" + (selectedMusic?.url === t.url ? " selected" : "");
+  card.dataset.url = t.url;
+
+  const durStr = t.duration ? `${Math.floor(t.duration/60)}:${String(t.duration%60).padStart(2,"0")}` : "";
+
+  card.innerHTML = `
+    <div class="track-title" title="${esc(t.title)}">${esc(t.title)}</div>
+    <div class="track-artist">${esc(t.artist)} ${durStr ? `· ${durStr}` : ""}</div>
+    <div class="track-actions">
+      <button class="btn-preview" data-url="${esc(t.url)}">▶ Ouvir</button>
+      <span class="track-license">${esc(t.license)}</span>
+    </div>
+  `;
+
+  card.querySelector(".btn-preview").addEventListener("click", e => {
+    e.stopPropagation();
+    togglePreview(t.url, e.target);
+  });
+
+  card.addEventListener("click", () => selectMusic(t, card));
+  return card;
+}
+
+function togglePreview(url, btn) {
+  if (currentAudio && !currentAudio.paused) {
+    currentAudio.pause();
+    document.querySelectorAll(".btn-preview.playing").forEach(b => { b.classList.remove("playing"); b.textContent = "▶ Ouvir"; });
+    if (currentAudio.src.endsWith(encodeURIComponent(url).replace(/%3A/g,":").replace(/%2F/g,"/"))) {
+      currentAudio = null; return;
+    }
+  }
+  currentAudio = new Audio(url);
+  currentAudio.play().catch(() => {});
+  btn.classList.add("playing");
+  btn.textContent = "⏹ Parar";
+  currentAudio.onended = () => { btn.classList.remove("playing"); btn.textContent = "▶ Ouvir"; };
+}
+
+function selectMusic(t, card) {
+  selectedMusic = t;
+  document.querySelectorAll(".track-card").forEach(c => c.classList.remove("selected"));
+  card.classList.add("selected");
+
+  document.getElementById("selectedMusicInfo").style.display = "flex";
+  document.getElementById("selectedMusicLabel").textContent = `🎵 ${t.title} — ${t.artist}`;
+  document.getElementById("volumeGroup").style.display = "block";
+}
+
+function clearMusic() {
+  selectedMusic = null;
+  document.querySelectorAll(".track-card").forEach(c => c.classList.remove("selected"));
+  document.getElementById("selectedMusicInfo").style.display = "none";
+  document.getElementById("volumeGroup").style.display = "none";
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+}
+
+// Load initial music
+loadMusic("all");
+
+// ─── Process ─────────────────────────────────────────────────────────────────
+document.getElementById("btnProcess").addEventListener("click", startProcessing);
+
+async function startProcessing() {
+  const ready = files.filter(f => !f.uploading);
+  if (!ready.length) return;
+
+  // Stop any music preview
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+
+  hide("resultSection"); hide("errorSection"); show("progressSection");
+  document.getElementById("btnProcess").disabled = true;
+
+  const fd = new FormData();
+  fd.append("session_id", sessionId);
+  fd.append("duration", selectedDuration);
+  fd.append("files_order", JSON.stringify(ready.map(f => f.name)));
+  fd.append("transition", document.getElementById("transitionSelect").value);
+  fd.append("resolution", selectedResolution);
+  fd.append("music_url", selectedMusic?.url || "");
+  fd.append("music_volume", document.getElementById("musicVolume").value);
+
+  try {
+    const r = await fetch("/api/process", { method: "POST", body: fd });
+    const d = await r.json();
+    currentJobId = d.job_id;
+    pollStatus(currentJobId);
+  } catch(e) {
+    showError("Erro ao iniciar processamento: " + e.message);
+  }
+}
+
+function pollStatus(jobId) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(async () => {
+    try {
+      const r = await fetch(`/api/status/${jobId}`);
+      const d = await r.json();
+      document.getElementById("progressFill").style.width = d.progress + "%";
+      document.getElementById("progressPct").textContent = d.progress + "%";
+      document.getElementById("progressMsg").textContent = d.message || "";
+      if (d.status === "done") showResult(d, jobId);
+      else if (d.status === "error") showError(d.message || "Erro desconhecido");
+      else if (d.status === "cancelled") showCancelled();
+      else pollStatus(jobId);
+    } catch { pollStatus(jobId); }
+  }, 1500);
+}
+
+async function cancelJob() {
+  if (!currentJobId) return;
+  document.getElementById("btnCancel").disabled = true;
+  document.getElementById("btnCancel").textContent = "Cancelando...";
+  try {
+    await fetch(`/api/jobs/${currentJobId}`, { method: "DELETE" });
+  } catch {}
+}
+
+function showCancelled() {
+  clearTimeout(pollTimer);
+  hide("progressSection");
+  document.getElementById("btnProcess").disabled = false;
+  // Show a brief toast-style message reusing errorSection
+  document.getElementById("errorMsg").textContent = "Processamento cancelado. Seus arquivos foram preservados.";
+  show("errorSection");
+  document.querySelector(".error-box h3").textContent = "⚠️ Cancelado";
+  document.querySelector(".error-box h3").style.color = "var(--warn)";
+}
+
+function showResult(d, jobId) {
+  hide("progressSection"); show("resultSection");
+  const m = Math.floor(d.duration_sec / 60), s = d.duration_sec % 60;
+  const musicNote = selectedMusic ? ` · 🎵 com música` : "";
+  document.getElementById("resultMeta").textContent =
+    `Duração: ${m}m ${s}s · Tamanho: ${d.file_size_mb} MB${musicNote}`;
+  const link = document.getElementById("downloadLink");
+  link.href = `/api/download/${jobId}`;
+  link.download = d.filename || "video_editado.mp4";
+  const preview = document.getElementById("resultPreview");
+  preview.src = `/outputs/${jobId}.mp4`;
+  preview.style.display = "block";
+  document.getElementById("btnProcess").disabled = false;
+}
+
+function showError(msg) {
+  hide("progressSection"); show("errorSection");
+  document.getElementById("errorMsg").textContent = msg;
+  document.getElementById("btnProcess").disabled = false;
+}
+
+function resetAll() {
+  clearTimeout(pollTimer);
+  files = []; currentJobId = null; selectedMusic = null;
+  renderList(); updateUI();
+  // Reset cancel button
+  const bc = document.getElementById("btnCancel");
+  if (bc) { bc.disabled = false; bc.textContent = "✕ Cancelar processamento"; }
+  // Reset error box style
+  const eh = document.querySelector(".error-box h3");
+  if (eh) { eh.textContent = "❌ Erro no processamento"; eh.style.color = "var(--danger)"; }
+  hide("progressSection"); hide("resultSection"); hide("errorSection");
+  document.getElementById("resultPreview").src = "";
+  document.getElementById("selectedMusicInfo").style.display = "none";
+  document.querySelectorAll(".track-card").forEach(c => c.classList.remove("selected"));
+  init();
+}
+
+// ─── Utils ───────────────────────────────────────────────────────────────────
+function show(id) { document.getElementById(id).style.display = "block"; }
+function hide(id) { document.getElementById(id).style.display = "none"; }
+function fmt(b) {
+  if (b >= 1073741824) return (b/1073741824).toFixed(1)+" GB";
+  if (b >= 1048576) return (b/1048576).toFixed(1)+" MB";
+  if (b >= 1024) return (b/1024).toFixed(0)+" KB";
+  return b+" B";
+}
+function esc(s) {
+  return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+renderList();
+</script>
+</body>
+</html>
